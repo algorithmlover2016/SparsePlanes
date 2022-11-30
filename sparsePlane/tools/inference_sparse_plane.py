@@ -35,6 +35,101 @@ from local_refinement_sift import (
     so3ToVec6d,
     fun_with_precalculated_sift_reduce_rot,
 )
+from pathlib import Path
+import json
+import pdb
+pdb.set_trace()
+
+def qvec2rotmat(qvec):
+    return np.array([
+        [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
+         2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
+         2 * qvec[3] * qvec[1] + 2 * qvec[0] * qvec[2]],
+
+        [2 * qvec[1] * qvec[2] + 2 * qvec[0] * qvec[3],
+         1 - 2 * qvec[1]**2 - 2 * qvec[3]**2,
+         2 * qvec[2] * qvec[3] - 2 * qvec[0] * qvec[1]],
+
+        [2 * qvec[3] * qvec[1] - 2 * qvec[0] * qvec[2],
+         2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
+         1 - 2 * qvec[1]**2 - 2 * qvec[2]**2]])
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
+
+def dump_to_json(output_dir, optimized_dict):
+    jsonPath = Path(output_dir) / "paras.json"
+    u0 = 320
+    v0 = 240
+    fx = 517.97
+    fy = 517.97
+    ans = dict()
+    ans['K'] = dict()
+    ans['K']["fx"] = fx
+    ans['K']["fy"] = fy
+    ans['K']["u0"] = u0
+    ans['K']["v0"] = v0
+    ans['K']["w"] = 640
+    ans['K']["h"] = 480
+    ans["TD"] = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+    ans['ImgStartIndex'] = 0
+    ans['ImgEndIndex'] = 1
+    ans['FramePathPattern'] = None
+    ans['PlanePara'] = list()
+    for idx in range(optimized_dict['n_corr']):
+        plane = optimized_dict['plane_param_override']['0'][idx]
+        offset = np.linalg.norm(plane)
+        normal = plane / max(offset, 1e-8)
+        normal = normal.tolist()
+        normal.append(offset)
+        ans['PlanePara'].append(normal)
+    RDelta = qvec2rotmat(optimized_dict['best_camera']['rotation'])
+    TDelta = optimized_dict['best_camera']['position']
+    RTlist = RDelta.flatten().tolist()
+    RTlist.extend(TDelta.tolist())
+    ans['Pose'] = list()
+    ans['Pose'].append([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0])
+    ans['Pose'].append(RTlist)
+    ans['Plane'] = list()
+    def get3DP(uP, vP, R, T, normal):
+        u = (uP - u0) / fx
+        v = (vP - v0) / fy
+        M = np.asarray([u * R[2, 0] - R[0, 0], u * R[2, 1] - R[0, 1], u * R[2, 2] - R[0, 2],
+                        v * R[2, 0] - R[1, 0], v * R[2, 1] - R[1, 1], v * R[2, 2] - R[1, 2],
+                        normal[0], normal[1], normal[2]])
+        B = np.array([T[0] - u * T[2], T[1] - v * T[2], -normal[3]])
+        return np.linalg.inv(np.array(M.reshape(3 ,3))) @ B.T
+
+    delta = 50
+    leftUp = [u0 / 2, v0 / 2]
+    leftDown = [u0 / 2, v0 / 2 + v0]
+    rightUp = [u0 / 2 + u0, v0 / 2]
+    rightDown = [u0 / 2 + u0, v0 / 2 + v0]
+    points = [leftUp, rightUp, rightDown, leftDown]
+    R = [
+        np.asarray([[1, 0, 0],
+                    [0, 1, 0],
+                    [0, 0, 1]]),
+        RDelta,
+    ]
+    T = [
+        np.asarray([0, 0, 0]),
+        TDelta,
+    ]
+
+    for idx, normal in enumerate(ans['PlanePara']):
+        ans['Plane'].append(list())
+        for p in points:
+            ans['Plane'][-1].append(get3DP(p[0] + idx * delta, p[1] + idx * delta, R[0], T[0], normal))
+    with open(jsonPath, 'w', encoding='utf-8') as f:
+        json.dump(ans, f, indent = 4, cls = NpEncoder)
 
 
 def km_solver(distance_matrix, weight):
@@ -695,6 +790,7 @@ def inference_pair(output_dir, model, dis_opt, con_opt, im0, im1):
     # Optimize
     optimized_dict = dis_opt.optimize(pred_dict)
     optimized_dict = con_opt.optimize(im0, im1, pred_dict, optimized_dict)
+    dump_to_json(output_dir, optimized_dict)
 
     # visualize
     save_matching(
