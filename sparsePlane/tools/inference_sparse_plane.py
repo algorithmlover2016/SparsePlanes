@@ -38,9 +38,7 @@ from local_refinement_sift import (
 from pathlib import Path
 import json
 import pdb
-pdb.set_trace()
-
-
+#pdb.set_trace()
 
 def qvec2rotmat(qvec):
     return np.array([
@@ -67,7 +65,7 @@ class NpEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 def dump_to_json(output_dir, optimized_dict):
-    jsonPath = Path(output_dir) / "paras.json"
+    jsonPath = Path(output_dir) / "reconstructRst.json"
     u0 = 320
     v0 = 240
     fx = 517.97
@@ -85,10 +83,14 @@ def dump_to_json(output_dir, optimized_dict):
     ans['ImgEndIndex'] = 1
     ans['FramePathPattern'] = None
     ans['PlanePara'] = list()
+    assignment_m = optimized_dict["best_assignment"]
+    assignment = np.argwhere(assignment_m)
+    validNormals = optimized_dict['plane_param_override']['0'][assignment[:, 0]]
     for idx in range(optimized_dict['n_corr']):
-        plane = optimized_dict['plane_param_override']['0'][idx]
+        plane = validNormals[idx]
         offset = np.linalg.norm(plane)
         normal = plane / max(offset, 1e-8)
+        normal = normal * np.array([1.0, -1.0, -1.0])
         normal = normal.tolist()
         normal.append(offset)
         ans['PlanePara'].append(normal)
