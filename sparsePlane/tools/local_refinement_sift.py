@@ -534,6 +534,19 @@ def rotation_matrix_from_array(float_array):
     R = quaternion.as_rotation_matrix(q)
     return R
 
+def trans(R0, T0, R1, T1, RD, TD):
+    R0 = rotation_matrix_from_array(R0)
+    R1 = rotation_matrix_from_array(R1)
+    RD = rotation_matrix_from_array(RD)
+
+    RD0 = np.column_stack((R0, T0.T))
+    RD1 = np.insert(R1, 3, values = T1.T, axis = 1)
+    RDD = np.insert(RD, 3, values = TD, axis = 1)
+
+    RD0 = np.insert(RD0, 3, values = np.asarray([0, 0, 0, 1]), axis = 0)
+    RD1 = np.insert(RD1, 3, values = np.asarray([0, 0, 0, 1]), axis = 0)
+    RDD = np.insert(RDD, 3, values = np.asarray([0, 0, 0, 1]), axis = 0)
+    return RD0, RD1, RDD
 
 def project(R, T, x):
     Rx = R @ x

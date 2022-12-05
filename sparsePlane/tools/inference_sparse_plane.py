@@ -40,6 +40,8 @@ import json
 import pdb
 pdb.set_trace()
 
+
+
 def qvec2rotmat(qvec):
     return np.array([
         [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
